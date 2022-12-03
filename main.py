@@ -2,8 +2,11 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-##
 
+from sklearn.linear_model import Lasso
+
+
+##
 
 os.chdir(r"C:\Users\Arthur\Documents\GitHub\y-intercept")
 
@@ -33,7 +36,7 @@ for strategy in strat_names :
 # plt.show()
 
 ##
-ALLOC_FREQ = 15        #frequency of reallocation
+ALLOC_FREQ = 300        #frequency of reallocation
 QUANTITY = 5            #quantity on trades
 
 #To keep track. temporary
@@ -110,10 +113,8 @@ def vwap_strat(df, ticker, ALLOC_FREQ):
 
 ## TWAP STRAT
 def twap(df, period):
-    # tp = (df['low'] + df['close'] + df['high']).divide(3)
     p = df['last']
     return df.assign(twap=(p.rolling(period).sum().divide(period)))
-
 
 def twap_strat(df, period = 15):
     twap_df = twap(df, period)
@@ -131,6 +132,27 @@ def twap_strat(df, period = 15):
 # twap_strat(tmp2)
 
 
+## REGRESSION STRAT
+
+
+
+def lasso_strat(x_train, x_test, y, p) :
+    # lasso = Lasso(alpha = 1.0)
+
+    lasso = Lasso(alpha=0.015, fit_intercept=False, tol=0.001,
+          max_iter=10e5, positive=True)
+
+    lasso.fit(x_train,y)
+
+    y_pred = lasso.predict([x_test])
+    y_pred = round(y_pred[0], 4)
+
+    # if y_pred > p :
+
+
+
+    return y_pred
+
 
 
 ## MAIN
@@ -140,15 +162,18 @@ for i,t in enumerate(time) :
     # Frequency of reallocation
     if i % ALLOC_FREQ != 0 or i ==0:
         continue
+    print(f"{i}/{len(time)}")
+
+    #index of time
+    ind = pd.Index(time).get_loc(t)
 
     # Running strategy on each tick
     for tick in ticks :
         if t not in df[tick]["date"].values:
             continue
 
-        ind = pd.Index(time).get_loc(t)     #index of t
-        tmp_dat = df[tick].iloc[:ind]       #available data
-
+        #available data
+        tmp_dat = df[tick].iloc[:ind]
 
         #VWAP ------------------------------------------------
         s1 = vwap_strat(tmp_dat, tick, ALLOC_FREQ)
@@ -156,11 +181,28 @@ for i,t in enumerate(time) :
             market_order(t, tick, s1, "VWAP")
 
 
-        # TWAP -----------------------------------------------
+        # REG -----------------------------------------------
+
+        #Inputs for Lasso
+        y = tmp_dat.iloc[:-1]["last"]
+        x_train, x_test  = pd.DataFrame(), []
+        for tick2 in ticks:
+            if tick2==tick : continue
+            tmp = df[tick2].iloc[:ind]["last"].values
+            if len(tmp) != len(y)+1 : continue
+
+            x_train[tick2] = tmp[:-1]
+            x_test.append(tmp[-1])
+        del tmp
+
+        #strat calculation
+        p = tmp_dat.iloc[-1]["last"]
+        s3 = lasso_strat(x_train, x_test, y, p)
+        print(p, s3)
 
 
-
-
+        #__________________________________
+        del tmp_dat
 
     t_cash.append(i)
     for strategy in strat_names :
