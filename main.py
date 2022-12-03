@@ -19,10 +19,10 @@ del df0
 
 ##
 
-strat = {}=
-strat["VWAP"] = pd.DataFrame(columns=['date', "position"])
-strat["TWAP"] = pd.DataFrame(columns=['date', "position"])
-strat["REG"] = pd.DataFrame(columns=['date', "position"])
+strat = {}
+strat["VWAP"] = pd.DataFrame(columns=['ticker', "position"])
+strat["TWAP"] = pd.DataFrame(columns=['ticker', "position"])
+strat["REG"] = pd.DataFrame(columns=['ticker', "position"])
 
 ### PLOT
 # for tick,y in df.items():
@@ -34,6 +34,7 @@ ALLOC_FREQ = 30 #requency of reallocation
 # from VWAP import *
 
 def check_position(strat, ticker):
+    strat["TWAP"]
 
 
 ##VWAP STRAT
