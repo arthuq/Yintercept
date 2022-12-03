@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.linear_model import Lasso, LinearRegression
 
 ##
-
+start_time = ttime.time()
 os.chdir(r"C:\Users\Arthur\Documents\GitHub\y-intercept")
 
 ##IMPORTING DATA
@@ -36,7 +36,8 @@ for strategy in strat_names :
 # plt.show()
 
 ## COMPUTING AND ALLOCATION PARAMETERS
-ALLOC_FREQ = 150        #frequency of reallocation
+
+ALLOC_FREQ = 500        #frequency of reallocation
 QUANTITY = 5            #quantity on buy/sell
 
 ## PORTFOLIO CONTINUOUS, KEEPING TRACK OF CHANGES
@@ -224,12 +225,8 @@ for ind,t in enumerate(time) :
             market_order(t, tick, s4, "LASSO_on_VWAP")
 
         # SRTAT 5 : ALL SAME SIGNALS
-        if len({s1, s3, s4}) == 1:
-            market_order(t, tick, s1, "LASSO_on_VWAP")
-
-
-
-
+        # if s1==s3==s4 and s1 != "idle":
+            # market_order(t, tick, s1, "ALL")
 
         #Updating portfolio value after reallocation
         for s in strat_names:
@@ -237,16 +234,12 @@ for ind,t in enumerate(time) :
             tmp_assets[s] += asset_qnt*p
     del tmp_dat
 
-
     #Keeping track of allocations
     t_track.append(ind)
     for strategy in strat_names :
         x_cash[strategy].append(CASH[strategy])
         x_assets[strategy].append(tmp_assets[strategy])
     del tmp_assets
-
-del tmp_spot, tmp_vol
-
 
 ## PORTFOLIO REAL VALUE UPDATE
 
@@ -262,6 +255,8 @@ def sign(x):
     return "-"
 
 print(*[ f"PNL {i} : {round(j[-1], 2)} ({sign(j[-1]-START_CASH)}{round(abs(j[-1]-START_CASH), 2)})"  for i,j in total_value.items()], sep='\n')
+
+print(f"Total time : {round(ttime.time() - start_time,4)}s")
 
 ## PLOT
 plt.title("Portfolio evolution")
