@@ -36,17 +36,16 @@ for strategy in strat_names :
 # plt.show()
 
 ##
-ALLOC_FREQ = 500        #frequency of reallocation
+ALLOC_FREQ = 100        #frequency of reallocation
 QUANTITY = 5            #quantity on trades
 
 #To keep track. temporary
 t_cash = [0]
 x_cash = {}
+x_assets = {}
 for strategy in strat_names :
     x_cash[strategy]= [START_CASH]
-
-#Strategies file
-# from functions import *
+    x_assets[strategy]= [0]
 
 ## FUNCTIONS
 
@@ -80,7 +79,7 @@ def market_order(t, tick, action, s):
         CASH[s] += qnt*price
         # print("short", qnt)
 
-##VWAP STRAT
+##STRAT 1 : VWAP STRAT
 def vwap(df):
     q = df['volume'].values         #traded volume
     p = df['last']                  #traded price
@@ -111,7 +110,7 @@ def vwap_strat(df, ticker, ALLOC_FREQ):
 
     return "idle"
 
-## TWAP STRAT
+## STRAT 2 : TWAP STRAT
 def twap(df, period):
     p = df['last']
     return df.assign(twap=(p.rolling(period).sum().divide(period)))
@@ -132,7 +131,7 @@ def twap_strat(df, period = 15):
 # twap_strat(tmp2)
 
 
-## REGRESSION STRAT
+## STRAT 3 : REGRESSION STRAT
 
 import time as ttime
 
@@ -171,10 +170,9 @@ def lasso_strat(x, y, p, ticker) :
 
 
 
-## MAIN
+## MAIN RUN
 
 print("done importing.")
-
 for i,t in enumerate(time) :
 
     # Frequency of reallocation
@@ -190,13 +188,13 @@ for i,t in enumerate(time) :
     lookback = max(30, ALLOC_FREQ)
     for tick in ticks:
         start = max(ind-lookback, 0)
-
         if t not in df[tick]["date"].values or ind>len(df[tick]):
             continue
 
         tmp_spot[tick] = df[tick]["last"].iloc[start:ind].values
 
-    # print(tmp_spot)
+
+    tmp_assets = { s:[0] for s in strat_names }
 
     # Running strategy on each tick
     for tick in ticks :
@@ -206,13 +204,12 @@ for i,t in enumerate(time) :
         #available data
         tmp_dat = df[tick].iloc[:ind]
 
-        #VWAP ------------------------------------------------
+        #STRAT 1 : VWAP ------------------------------------------------
         s1 = vwap_strat(tmp_dat, tick, ALLOC_FREQ)
         if s1 != "idle" :
             market_order(t, tick, s1, "VWAP")
 
-
-        # REG -----------------------------------------------
+        # STRAT 3 : REG -----------------------------------------------
         y = tmp_spot[tick].iloc[:-1]
         x = tmp_spot.drop(tick, axis=1) #.iloc[:-1]
         p = tmp_spot[tick].iloc[-1]
@@ -224,21 +221,40 @@ for i,t in enumerate(time) :
         # print(p, s3)
 
         #__________________________________
+
+
         del tmp_dat
 
-    t_cash.append(i)
+        #Updating portfolio values
+        for s in strat_names:
+            asset_qnt = STRAT[s]["position"][STRAT[s]["ticker"].index(tick)]
+            tmp_assets[s] += asset_qnt*p
 
+
+    t_cash.append(i)
     for strategy in strat_names :
         x_cash[strategy].append(CASH[strategy])
+        x_assets[strategy].append( tmp_assets[strategy] )
 
 
 print(STRAT["VWAP"]["position"])
+
 print(CASH)
+##
+total_value={ s:[] for s in strat_names}
+for s in strat_names:
+
+    for c,a in zip(x_cash[s], x_assets[s]):
+        total_value[s].append(float(c)+float(a) )
+
 
 ##
 plt.title("Cash evolution")
 for strategy in strat_names :
     plt.plot(t_cash, x_cash[strategy], label=strategy)
+    plt.plot(t_cash, x_assets[strategy], label="assets"+strategy, color="green" )
+
+    plt.plot(t_cash, total_value[strategy], label="TOT"+strategy, linewidth=5 )
 
 plt.legend()
 plt.show()
