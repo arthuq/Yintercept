@@ -6,23 +6,24 @@ import numpy as np
 
 os.chdir(r"C:\Users\Arthur\Documents\GitHub\y-intercept")
 
+
 ##IMPORTING DATA
 df0 = pd.read_csv(r'data.csv')
 ticks = list(df0["ticker"].unique())
 
 df = {}
-for tick in ticks:
+for i,tick in enumerate(ticks):
     df[tick] = df0.loc[df0['ticker'] == tick]
 
 time = df[ticks[0]]["date"]
 del df0
-
 ##
 
 strat = {}
-strat["VWAP"] = pd.DataFrame(columns=['ticker', "position"])
-strat["TWAP"] = pd.DataFrame(columns=['ticker', "position"])
-strat["REG"] = pd.DataFrame(columns=['ticker', "position"])
+strat["VWAP"] = {'ticker':ticks, 'position':[0]*len(ticks) }
+strat["TWAP"] = {'ticker':ticks, 'position':[0]*len(ticks) }
+strat["REG"] = {'ticker':ticks, 'position':[0]*len(ticks) }
+
 
 ### PLOT
 # for tick,y in df.items():
@@ -30,37 +31,56 @@ strat["REG"] = pd.DataFrame(columns=['ticker', "position"])
 # plt.show()
 
 ##
-ALLOC_FREQ = 30 #requency of reallocation
+ALLOC_FREQ = 200 #requency of reallocation
+CASH = 10e3
+QUANTITY = 1
+
 # from VWAP import *
 
-def check_position(strat, ticker):
-    strat["TWAP"]
+def check_position(s, ticker):
+    "Returns position from certain strategyt of certin ticker"
+    return strat[s]["position"][strat[s]["ticker"].index(ticker)]
+
+def market_order(t, tick, action, s):
+    tmp = df[tick]
+
+    if t not in tmp["date"].values :
+        return None
+
+    price = round(float( tmp.loc[tmp["date"] == t ]["last"] ), 4)
+    # print(t, tick, price)
+
+    strat[s]["position"][strat[s]["ticker"].index(tick)] += QUANTITY
+
+    # return price
+
 
 
 ##VWAP STRAT
 def vwap(df):
-    q = df['volume'].values       #traded volume
-    p = df['last']          #traded price
+    q = df['volume'].values         #traded volume
+    p = df['last']                  #traded price
     return df.assign(vwap=(p * q).cumsum() / q.cumsum())
 
-def vwap_strat(df):
-    l = len(df)
-    vwap_df = vwap(df)
 
-    #last trading day
-    # tmp = vwap_df.iloc[-1]
-    # tmp_past = vwap_df.iloc[-15]
-    # diff =  tmp["last"] - tmp.vwap
-    # ratio = 100*diff/tmp["last"]
+
+def vwap_strat(df, ticker):
+    vwap_df = vwap(df)
+    position = check_position("VWAP", ticker)
 
     #signal to buy
-    should_buy = vwap_df['last'][-1] > vwap_df["vwap"][-1] and vwap_df["vwap"][-1] > vwap_df["vwap"][-2]
+    should_buy = vwap_df.iloc[-1]['last'] > vwap_df.iloc[-1]["vwap"] and vwap_df.iloc[-1]["vwap"] > vwap_df.iloc[-ALLOC_FREQ]["vwap"]
 
     #signal to sell
-    should_sell = vwap_df['last'][-1] < vwap_df["vwap"][-1] and vwap_df["vwap"][-1] < vwap_df["vwap"][-2]
+    should_sell = vwap_df.iloc[-1]['last'] < vwap_df.iloc[-1]["vwap"] and vwap_df.iloc[-1]["vwap"] < vwap_df.iloc[-ALLOC_FREQ]["vwap"]
 
-    position = check_position(ticker)
+    if position == 0 and should_buy :
+        return "long"
 
+    elif position > 0 and should_sell :
+        return "short"
+
+    return "idle"
 
     plt.title("VWAP vs price")
     plt.plot(vwap_df["vwap"])
@@ -103,24 +123,36 @@ for i,t in enumerate(time) :
         continue
 
     # Running strategy on each tick
-    for tick in ticks[:3] :
-        print(tick)
+    for tick in ticks :
+
+
+        if t not in df[tick]["date"].values:
+            continue
+
+
+        # print(tick)
         ind = pd.Index(time).get_loc(t) #index of t
         tmp_dat = df[tick].iloc[:ind] #available data
+        # print(i, tick, "length", len(tmp_dat))
         # print(tmp_dat["volume"])
 
         #benchmark
-        s1 = vwap_strat(tmp_dat)
+        s1 = vwap_strat(tmp_dat, tick)
 
-        s1_tmp = {'date': t, 'quantity': 1 , 'action': s1 }
+        if s1 != "idle" :
+            market_order(t, tick, s1, "VWAP")
+            print(s1, d)
 
-        print(s1_tmp)
+
+        # s1_tmp = {'date': t, 'quantity': 1 , 'action': s1 }
+
+        # print(s1_tmp)
         # .append(s1_tmp, ignore_index = True)
 
 
-        portfolio_s1[tick].append(s1_tmp, ignore_index=True)
+        # portfolio_s1[tick].append(s1_tmp, ignore_index=True)
 
-        print(portfolio_s1[tick])
+        # print(portfolio_s1[tick])
 
         # update
         # df_port = pd.DataFrame({'date' : [time], 'quantity':[12] })
