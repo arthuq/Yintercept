@@ -33,28 +33,38 @@ strat["REG"] = {'ticker':ticks, 'position':[0]*len(ticks) }
 ##
 ALLOC_FREQ = 200 #requency of reallocation
 CASH = 10e3
-QUANTITY = 1
+QUANTITY = 5
 
+t_cash, x_cash = [], []
+
+##
 # from VWAP import *
 
 def check_position(s, ticker):
     "Returns position from certain strategyt of certin ticker"
     return strat[s]["position"][strat[s]["ticker"].index(ticker)]
 
+
 def market_order(t, tick, action, s):
     tmp = df[tick]
+    global CASH
 
     if t not in tmp["date"].values :
         return None
 
+    #get price of asset
     price = round(float( tmp.loc[tmp["date"] == t ]["last"] ), 4)
-    # print(t, tick, price)
+    actual_position = check_position(s, tick)
 
-    strat[s]["position"][strat[s]["ticker"].index(tick)] += QUANTITY
+    if action == "long":
+        qnt = int( min(CASH//price, QUANTITY) )
+        strat[s]["position"][strat[s]["ticker"].index(tick)] += qnt
+        CASH -= qnt*price
 
-    # return price
-
-
+    elif action == "short" :
+        qnt = int( min(actual_position, QUANTITY) )
+        strat[s]["position"][strat[s]["ticker"].index(tick)] -= qnt
+        CASH += qnt*price
 
 ##VWAP STRAT
 def vwap(df):
@@ -63,8 +73,11 @@ def vwap(df):
     return df.assign(vwap=(p * q).cumsum() / q.cumsum())
 
 
-
 def vwap_strat(df, ticker):
+
+    if len(df) <= ALLOC_FREQ :
+        return "idle"
+
     vwap_df = vwap(df)
     position = check_position("VWAP", ticker)
 
@@ -74,19 +87,15 @@ def vwap_strat(df, ticker):
     #signal to sell
     should_sell = vwap_df.iloc[-1]['last'] < vwap_df.iloc[-1]["vwap"] and vwap_df.iloc[-1]["vwap"] < vwap_df.iloc[-ALLOC_FREQ]["vwap"]
 
+    #Simple strategy : buy if signal to buy and no asset detained
     if position == 0 and should_buy :
         return "long"
 
+    #Sell if asset is in portfolio
     elif position > 0 and should_sell :
         return "short"
 
     return "idle"
-
-    plt.title("VWAP vs price")
-    plt.plot(vwap_df["vwap"])
-    plt.plot(vwap_df["last"])
-    plt.grid()
-    # plt.show()
 
 
 ## TWAP STRAT
@@ -125,38 +134,25 @@ for i,t in enumerate(time) :
     # Running strategy on each tick
     for tick in ticks :
 
-
         if t not in df[tick]["date"].values:
             continue
 
+        ind = pd.Index(time).get_loc(t)     #index of t
+        tmp_dat = df[tick].iloc[:ind]       #available data
 
-        # print(tick)
-        ind = pd.Index(time).get_loc(t) #index of t
-        tmp_dat = df[tick].iloc[:ind] #available data
-        # print(i, tick, "length", len(tmp_dat))
-        # print(tmp_dat["volume"])
-
-        #benchmark
+        #VWAP ------------------------------------------------
         s1 = vwap_strat(tmp_dat, tick)
-
         if s1 != "idle" :
             market_order(t, tick, s1, "VWAP")
-            print(s1, d)
+
+    t_cash.append(i)
+    x_cash.append(CASH)
+
+            # print(s1, d)
 
 
-        # s1_tmp = {'date': t, 'quantity': 1 , 'action': s1 }
-
-        # print(s1_tmp)
-        # .append(s1_tmp, ignore_index = True)
-
-
-        # portfolio_s1[tick].append(s1_tmp, ignore_index=True)
-
-        # print(portfolio_s1[tick])
-
-        # update
-        # df_port = pd.DataFrame({'date' : [time], 'quantity':[12] })
-        # portfolio[tick].append(df_port, ignore_index = True)
-
-
+print(strat["VWAP"]["position"])
+print(CASH)
 ##
+plt.scatter(t_cash, x_cash)
+plt.show()
