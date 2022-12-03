@@ -3,7 +3,7 @@ import time as ttime
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso, LinearRegression
 
 ##
 
@@ -25,7 +25,7 @@ del df0
 STRAT, CASH, START_CASH= {}, {}, 10e6
 
 #Initializing portfolio for each strategy
-strat_names = ["VWAP", "TWAP", "LASSO"]
+strat_names = ["VWAP", "TWAP", "LASSO", "LASSO_on_VWAP", "ALL"]
 for strategy in strat_names :
     STRAT[strategy] = {'ticker':ticks, 'position':[0]*len(ticks) }
     CASH[strategy] = START_CASH
@@ -45,7 +45,6 @@ for strategy in strat_names :
     x_cash[strategy], x_assets[strategy] = [START_CASH], [0]
 
 ## FUNCTIONS
-
 def check_position(s, ticker):
     "Returns position from certain strategyt of certin ticker"
     return STRAT[s]["position"][STRAT[s]["ticker"].index(ticker)]
@@ -76,6 +75,9 @@ def vwap(df):
     q = df['volume'].values         #traded volume
     p = df['last']                  #traded price
     return df.assign(vwap=(p * q).cumsum() / q.cumsum())
+
+def vwap_single(spot, vol):
+    return (spot * vol).cumsum() / vol.cumsum()
 
 def vwap_strat(df, ticker):
     global ALLOC_FREQ
@@ -125,11 +127,11 @@ def twap_strat(df, period = 15):
 
 ## STRAT 3 : REGRESSION STRAT
 
-def lasso_strat(x, y, p, ticker) :
+def lasso_strat(x, y, p, ticker, alpha=0.8, tol=1e-2, max_ite=10e4) :
     # start_time = ttime.time()
 
     #Lasso parameters
-    lasso = Lasso(alpha=0.8, tol=1e-2, max_iter=10e4)
+    lasso = Lasso(alpha=alpha, tol=tol, max_iter=max_ite)
 
     #Formatting data
     x_train = x.iloc[:-1]
@@ -140,13 +142,21 @@ def lasso_strat(x, y, p, ticker) :
     y_pred = round(lasso.predict([x_test])[0] , 4)
     # print(f" {round(ttime.time() - start_time,4)}")
 
+    #Trend
+    regressor = LinearRegression()
+    xt = np.array(range(len(y)))
+    regressor.fit(xt.reshape(-1, 1),np.array(y))
+    slope = regressor.coef_[0]
+    # print(slope)
+
     #Current position on ticker
     position = check_position("LASSO", ticker)
 
-    #More conditions...
-    should_buy = y_pred > p
+    #Undervalued asset
+    should_buy = y_pred > p and slope > 0.05
 
-    should_sell = y_pred < p
+    #Overvallued asset
+    should_sell = y_pred < p and slope < -0.05
 
     #Simple strategy : buy if signal to buy and no asset detained
     if position == 0 and should_buy :
@@ -165,28 +175,23 @@ for ind,t in enumerate(time) :
     i=ind
 
     # Frequency of reallocation
-    if i % ALLOC_FREQ != 0 or i ==0:
+    if ind % ALLOC_FREQ != 0 or ind ==0:
         continue
-    print(f"{i}/{len(time)}")
+    # print(f"{i}/{len(time)}")
     print(f"{ind}/{len(time)}")
 
-    #index of current time
-    # ind = pd.Index(time).get_loc(t)
-    # print(i==ind)
 
-    # ind = i
-
-    #Construction spot df price
-    tmp_spot = pd.DataFrame()
+    #Construction spot df price, for LASSO
+    tmp_spot, tmp_vwap = pd.DataFrame(), pd.DataFrame()
     lookback = max(30, ALLOC_FREQ)
     for tick in ticks:
         start = max(ind-lookback, 0)
         if t not in df[tick]["date"].values or ind>len(df[tick]):
             continue
-
         tmp_spot[tick] = df[tick]["last"].iloc[start:ind].values
+        tmp_vwap[tick] = vwap_single(tmp_spot[tick], df[tick]["volume"].iloc[start:ind].values)
 
-
+    # print(tmp_vwap)
     tmp_assets = { s:[0] for s in strat_names }
 
     # Running strategy on each tick
@@ -207,11 +212,20 @@ for ind,t in enumerate(time) :
         x = tmp_spot.drop(tick, axis=1) #.iloc[:-1]
         p = tmp_spot[tick].iloc[-1]
 
-        s3 = lasso_strat(x, y, p, tick)
+        s3 = lasso_strat(x, y, p, tick, 0.8, 1e-2, 10e4)
         if s3 != "idle" :
             market_order(t, tick, s3, "LASSO")
-        del tmp_dat
+        # del tmp_dat
 
+        # STRAT 4 : REG ON VWAP -----------------------------------------
+        x = tmp_vwap.drop(tick, axis=1) #.iloc[:-1]
+        s4 = lasso_strat(x, y, p, tick, 1, 1e-1, 10e2)
+        if s4 != "idle" :
+            market_order(t, tick, s4, "LASSO_on_VWAP")
+
+        # SRTAT 5 : ALL SAME SIGNALS
+        if len({s1, s3, s4}) == 1:
+            market_order(t, tick, s1, "LASSO_on_VWAP")
 
 
 
@@ -221,6 +235,8 @@ for ind,t in enumerate(time) :
         for s in strat_names:
             asset_qnt = STRAT[s]["position"][STRAT[s]["ticker"].index(tick)]
             tmp_assets[s] += asset_qnt*p
+    del tmp_dat
+
 
     #Keeping track of allocations
     t_track.append(ind)
@@ -229,7 +245,8 @@ for ind,t in enumerate(time) :
         x_assets[strategy].append(tmp_assets[strategy])
     del tmp_assets
 
-# print(STRAT["VWAP"]["position"])
+del tmp_spot, tmp_vol
+
 
 ## PORTFOLIO REAL VALUE UPDATE
 
@@ -238,12 +255,20 @@ for s in strat_names:
     for c,a in zip(x_cash[s], x_assets[s]):
         total_value[s].append(float(c)+float(a) )
 
+## RESULTS
+def sign(x):
+    if x>=0:
+        return "+"
+    return "-"
+
+print(*[ f"PNL {i} : {round(j[-1], 2)} ({sign(j[-1]-START_CASH)}{round(abs(j[-1]-START_CASH), 2)})"  for i,j in total_value.items()], sep='\n')
+
 ## PLOT
 plt.title("Portfolio evolution")
 for strategy in strat_names :
-    plt.plot(t_track, x_cash[strategy], label="CASH_"+strategy)
-    plt.plot(t_track, x_assets[strategy], label="ASSETS_"+strategy, color="green" )
+    # plt.plot(t_track, x_cash[strategy], label="CASH_"+strategy)
+    # plt.plot(t_track, x_assets[strategy], label="ASSETS_"+strategy, color="green" )
     plt.plot(t_track, total_value[strategy], label="TOT_"+strategy, linewidth=5 )
-
+plt.grid()
 plt.legend()
 plt.show()
