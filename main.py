@@ -251,10 +251,10 @@ for s in strat_names:
 ##
 plt.title("Cash evolution")
 for strategy in strat_names :
-    plt.plot(t_cash, x_cash[strategy], label=strategy)
-    plt.plot(t_cash, x_assets[strategy], label="assets"+strategy, color="green" )
+    plt.plot(t_cash, x_cash[strategy], label="CASH_"+strategy)
+    plt.plot(t_cash, x_assets[strategy], label="ASSETS_"+strategy, color="green" )
 
-    plt.plot(t_cash, total_value[strategy], label="TOT"+strategy, linewidth=5 )
+    plt.plot(t_cash, total_value[strategy], label="TOT_"+strategy, linewidth=5 )
 
 plt.legend()
 plt.show()
