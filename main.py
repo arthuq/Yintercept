@@ -4,12 +4,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.linear_model import Lasso, LinearRegression
-
 ##
 start_time = ttime.time()
-os.chdir(r"C:\Users\Arthur\Documents\GitHub\y-intercept")
 
 ##IMPORTING DATA
+os.chdir(r"C:\Users\Arthur\Documents\GitHub\y-intercept")
 df0 = pd.read_csv(r'data.csv')
 ticks = list(df0["ticker"].unique())
 
@@ -22,23 +21,23 @@ del df0
 
 ## SOME PARAMETERS
 
-STRAT, CASH, START_CASH= {}, {}, 10e6
+START_CASH = 10e6       #Initial invesment
+ALLOC_FREQ = 30         #frequency of reallocation
+QUANTITY = 5            #quantity on buy/sell
+
+#Names of the differents strategies
+strat_names = ["VWAP","LASSO", "LASSO_on_VWAP"]
 
 #Initializing portfolio for each strategy
-strat_names = ["VWAP", "TWAP", "LASSO", "LASSO_on_VWAP", "ALL"]
+STRAT, CASH= {}, {}
 for strategy in strat_names :
     STRAT[strategy] = {'ticker':ticks, 'position':[0]*len(ticks) }
     CASH[strategy] = START_CASH
 
-### PLOT
+### INITIAL PLOT
 # for tick,y in df.items():
 #     plt.plot(y["last"])
 # plt.show()
-
-## COMPUTING AND ALLOCATION PARAMETERS
-
-ALLOC_FREQ = 500        #frequency of reallocation
-QUANTITY = 5            #quantity on buy/sell
 
 ## PORTFOLIO CONTINUOUS, KEEPING TRACK OF CHANGES
 t_track, x_cash, x_assets = [0], {}, {}
@@ -105,7 +104,7 @@ def vwap_strat(df, ticker):
 
     return "idle"
 
-## STRAT 2 : TWAP STRAT
+## STRAT 2 : TWAP STRAT (NOT FINISHED)
 def twap(df, period):
     p = df['last']
     return df.assign(twap=(p.rolling(period).sum().divide(period)))
@@ -127,7 +126,6 @@ def twap_strat(df, period = 15):
 
 
 ## STRAT 3 : REGRESSION STRAT
-
 def lasso_strat(x, y, p, ticker, alpha=0.8, tol=1e-2, max_ite=10e4) :
     # start_time = ttime.time()
 
@@ -180,7 +178,6 @@ for ind,t in enumerate(time) :
         continue
     # print(f"{i}/{len(time)}")
     print(f"{ind}/{len(time)}")
-
 
     #Construction spot df price, for LASSO
     tmp_spot, tmp_vwap = pd.DataFrame(), pd.DataFrame()
