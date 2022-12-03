@@ -23,12 +23,12 @@ del df0
 
 ##
 
-STRAT, CASH = {}, {}
+STRAT, CASH, START_CASH= {}, {}, 10e6
 
-strat_names = ["VWAP", "TWAP", "REG"]
+strat_names = ["VWAP", "TWAP", "LASSO"]
 for strategy in strat_names :
     STRAT[strategy] = {'ticker':ticks, 'position':[0]*len(ticks) }
-    CASH[strategy] = 10e6
+    CASH[strategy] = START_CASH
 
 ### PLOT
 # for tick,y in df.items():
@@ -36,14 +36,14 @@ for strategy in strat_names :
 # plt.show()
 
 ##
-ALLOC_FREQ = 300        #frequency of reallocation
+ALLOC_FREQ = 500        #frequency of reallocation
 QUANTITY = 5            #quantity on trades
 
 #To keep track. temporary
-t_cash = []
+t_cash = [0]
 x_cash = {}
 for strategy in strat_names :
-    x_cash[strategy]= []
+    x_cash[strategy]= [START_CASH]
 
 #Strategies file
 # from functions import *
@@ -134,28 +134,46 @@ def twap_strat(df, period = 15):
 
 ## REGRESSION STRAT
 
+import time as ttime
 
+def lasso_strat(x, y, p, ticker) :
+    start_time = ttime.time()
 
-def lasso_strat(x_train, x_test, y, p) :
-    # lasso = Lasso(alpha = 1.0)
+    #Lasso parameters
+    lasso = Lasso(alpha=0.8, tol=1e-2, max_iter=10e4)
 
-    lasso = Lasso(alpha=0.015, fit_intercept=False, tol=0.001,
-          max_iter=10e5, positive=True)
+    #Formatting data
+    x_train = x.iloc[:-1]
+    x_test = x.iloc[-1].values
 
+    #Fitting the model
     lasso.fit(x_train,y)
+    y_pred = round(lasso.predict([x_test])[0] , 4)
 
-    y_pred = lasso.predict([x_test])
-    y_pred = round(y_pred[0], 4)
+    # print(y_pred)
+    # print(f" {round(ttime.time() - start_time,4)}")
 
-    # if y_pred > p :
+    #Current position on ticker
+    position = check_position("LASSO", ticker)
 
+    should_buy = y_pred > p
+    should_sell = y_pred < p
 
+    #Simple strategy : buy if signal to buy and no asset detained
+    if position == 0 and should_buy :
+        return "long"
 
-    return y_pred
+    #Sell if asset is in portfolio
+    elif position > 0 and should_sell :
+        return "short"
+
+    return "idle"
 
 
 
 ## MAIN
+
+print("done importing.")
 
 for i,t in enumerate(time) :
 
@@ -167,9 +185,22 @@ for i,t in enumerate(time) :
     #index of time
     ind = pd.Index(time).get_loc(t)
 
+    #Construction spot df price
+    tmp_spot = pd.DataFrame()
+    lookback = max(30, ALLOC_FREQ)
+    for tick in ticks:
+        start = max(ind-lookback, 0)
+
+        if t not in df[tick]["date"].values or ind>len(df[tick]):
+            continue
+
+        tmp_spot[tick] = df[tick]["last"].iloc[start:ind].values
+
+    # print(tmp_spot)
+
     # Running strategy on each tick
     for tick in ticks :
-        if t not in df[tick]["date"].values:
+        if t not in df[tick]["date"].values or ind>len(df[tick]) :
             continue
 
         #available data
@@ -182,35 +213,28 @@ for i,t in enumerate(time) :
 
 
         # REG -----------------------------------------------
+        y = tmp_spot[tick].iloc[:-1]
+        x = tmp_spot.drop(tick, axis=1) #.iloc[:-1]
+        p = tmp_spot[tick].iloc[-1]
 
-        #Inputs for Lasso
-        y = tmp_dat.iloc[:-1]["last"]
-        x_train, x_test  = pd.DataFrame(), []
-        for tick2 in ticks:
-            if tick2==tick : continue
-            tmp = df[tick2].iloc[:ind]["last"].values
-            if len(tmp) != len(y)+1 : continue
+        s3 = lasso_strat(x, y, p, tick)
+        if s3 != "idle" :
+            market_order(t, tick, s3, "LASSO")
 
-            x_train[tick2] = tmp[:-1]
-            x_test.append(tmp[-1])
-        del tmp
-
-        #strat calculation
-        p = tmp_dat.iloc[-1]["last"]
-        s3 = lasso_strat(x_train, x_test, y, p)
-        print(p, s3)
-
+        # print(p, s3)
 
         #__________________________________
         del tmp_dat
 
     t_cash.append(i)
+
     for strategy in strat_names :
         x_cash[strategy].append(CASH[strategy])
 
 
 print(STRAT["VWAP"]["position"])
 print(CASH)
+
 ##
 plt.title("Cash evolution")
 for strategy in strat_names :
