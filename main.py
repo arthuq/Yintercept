@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 ##
 
-os.chdir(r"C:\Users\Arthur\Documents\GitHub\y-intercept")
 
+os.chdir(r"C:\Users\Arthur\Documents\GitHub\y-intercept")
 
 ##IMPORTING DATA
 df0 = pd.read_csv(r'data.csv')
@@ -17,13 +17,15 @@ for i,tick in enumerate(ticks):
 
 time = df[ticks[0]]["date"]
 del df0
+
 ##
 
-strat = {}
-strat["VWAP"] = {'ticker':ticks, 'position':[0]*len(ticks) }
-strat["TWAP"] = {'ticker':ticks, 'position':[0]*len(ticks) }
-strat["REG"] = {'ticker':ticks, 'position':[0]*len(ticks) }
+STRAT, CASH = {}, {}
 
+strat_names = ["VWAP", "TWAP", "REG"]
+for strategy in strat_names :
+    STRAT[strategy] = {'ticker':ticks, 'position':[0]*len(ticks) }
+    CASH[strategy] = 10e6
 
 ### PLOT
 # for tick,y in df.items():
@@ -31,23 +33,29 @@ strat["REG"] = {'ticker':ticks, 'position':[0]*len(ticks) }
 # plt.show()
 
 ##
-ALLOC_FREQ = 200 #requency of reallocation
-CASH = 10e3
-QUANTITY = 5
+ALLOC_FREQ = 15        #frequency of reallocation
+QUANTITY = 5            #quantity on trades
 
-t_cash, x_cash = [], []
+#To keep track. temporary
+t_cash = []
+x_cash = {}
+for strategy in strat_names :
+    x_cash[strategy]= []
 
-##
-# from VWAP import *
+#Strategies file
+# from functions import *
+
+## FUNCTIONS
 
 def check_position(s, ticker):
     "Returns position from certain strategyt of certin ticker"
-    return strat[s]["position"][strat[s]["ticker"].index(ticker)]
-
+    return STRAT[s]["position"][STRAT[s]["ticker"].index(ticker)]
 
 def market_order(t, tick, action, s):
     tmp = df[tick]
     global CASH
+    global QUANTITY
+    # print(CASH)
 
     if t not in tmp["date"].values :
         return None
@@ -55,16 +63,19 @@ def market_order(t, tick, action, s):
     #get price of asset
     price = round(float( tmp.loc[tmp["date"] == t ]["last"] ), 4)
     actual_position = check_position(s, tick)
+    # cash = CASH[s]
 
     if action == "long":
-        qnt = int( min(CASH//price, QUANTITY) )
-        strat[s]["position"][strat[s]["ticker"].index(tick)] += qnt
-        CASH -= qnt*price
+        qnt = int( min(CASH[s] // price, QUANTITY) )
+        STRAT[s]["position"][STRAT[s]["ticker"].index(tick)] += qnt
+        CASH[s] -= qnt*price
+        # print("long", qnt, CASH//price )
 
     elif action == "short" :
         qnt = int( min(actual_position, QUANTITY) )
-        strat[s]["position"][strat[s]["ticker"].index(tick)] -= qnt
-        CASH += qnt*price
+        STRAT[s]["position"][STRAT[s]["ticker"].index(tick)] -= qnt
+        CASH[s] += qnt*price
+        # print("short", qnt)
 
 ##VWAP STRAT
 def vwap(df):
@@ -72,8 +83,8 @@ def vwap(df):
     p = df['last']                  #traded price
     return df.assign(vwap=(p * q).cumsum() / q.cumsum())
 
-
-def vwap_strat(df, ticker):
+def vwap_strat(df, ticker, ALLOC_FREQ):
+    # global ALLOC_FREQ
 
     if len(df) <= ALLOC_FREQ :
         return "idle"
@@ -96,7 +107,6 @@ def vwap_strat(df, ticker):
         return "short"
 
     return "idle"
-
 
 ## TWAP STRAT
 def twap(df, period):
@@ -133,26 +143,36 @@ for i,t in enumerate(time) :
 
     # Running strategy on each tick
     for tick in ticks :
-
         if t not in df[tick]["date"].values:
             continue
 
         ind = pd.Index(time).get_loc(t)     #index of t
         tmp_dat = df[tick].iloc[:ind]       #available data
 
+
         #VWAP ------------------------------------------------
-        s1 = vwap_strat(tmp_dat, tick)
+        s1 = vwap_strat(tmp_dat, tick, ALLOC_FREQ)
         if s1 != "idle" :
             market_order(t, tick, s1, "VWAP")
 
+
+        # TWAP -----------------------------------------------
+
+
+
+
+
     t_cash.append(i)
-    x_cash.append(CASH)
+    for strategy in strat_names :
+        x_cash[strategy].append(CASH[strategy])
 
-            # print(s1, d)
 
-
-print(strat["VWAP"]["position"])
+print(STRAT["VWAP"]["position"])
 print(CASH)
 ##
-plt.scatter(t_cash, x_cash)
+plt.title("Cash evolution")
+for strategy in strat_names :
+    plt.plot(t_cash, x_cash[strategy], label=strategy)
+
+plt.legend()
 plt.show()
